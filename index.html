@@ -99,7 +99,9 @@
 
   const BALL = {
     radius: 9,
-    speed: 340,          // px/s (등속)
+    speed: 340,          // px/s (기본 속도)
+    speedStep: 14,       // 공이 하나일 때 1점당 빨라지는 정도
+    maxSpeed: 720,       // 아무리 빨라져도 여기까지
     maxCount: 5,
     maxBounceAngle: Math.PI / 3,   // 바 끝에 맞았을 때 튕기는 각도(60°)
   };
@@ -178,16 +180,23 @@
     });
   }
 
+  // 공이 하나뿐일 때만 점수에 따라 점점 빨라진다
+  function currentSpeed() {
+    if (balls.length !== 1) return BALL.speed;
+    return Math.min(BALL.speed + state.score * BALL.speedStep, BALL.maxSpeed);
+  }
+
   function bounceOffBar(ball) {
     // 바 중앙에서 얼마나 떨어진 곳에 맞았는지 (-1 왼쪽 끝 ~ +1 오른쪽 끝)
     const offset = (ball.x - (bar.x + BAR.width / 2)) / (BAR.width / 2);
     const angle = Math.max(-1, Math.min(1, offset)) * BALL.maxBounceAngle;
 
-    ball.vx = Math.sin(angle) * BALL.speed;
-    ball.vy = -Math.cos(angle) * BALL.speed;
-    ball.y = BAR.y - BALL.radius;
-
     state.score += 1;
+
+    const speed = currentSpeed();
+    ball.vx = Math.sin(angle) * speed;
+    ball.vy = -Math.cos(angle) * speed;
+    ball.y = BAR.y - BALL.radius;
   }
 
   function hitsBar(ball, prevY) {
@@ -233,8 +242,17 @@
     bar.x += dir * BAR.speed * dt;
     bar.x = Math.max(0, Math.min(W - BAR.width, bar.x));
 
+    const speed = currentSpeed();
+
     for (const ball of balls) {
       const prevY = ball.y;
+
+      // 점수나 공 개수가 바뀌면 방향은 그대로 두고 속력만 맞춘다
+      const mag = Math.hypot(ball.vx, ball.vy);
+      if (mag > 0) {
+        ball.vx = (ball.vx / mag) * speed;
+        ball.vy = (ball.vy / mag) * speed;
+      }
 
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
@@ -265,20 +283,37 @@
   }
 
   // ── 그리기 ──────────────────────────────────────────────
+  const HUD = {
+    labelFont: '600 22px system-ui, sans-serif',
+    valueFont: '700 40px system-ui, sans-serif',
+    labelColor: '#6f7793',
+    labelY: 16,
+    valueY: 42,
+  };
+
+  // 라벨을 위에, 숫자를 그 아래에 표시한다
+  function drawHudColumn(label, value, x, align, valueColor) {
+    ctx.textAlign = align;
+
+    ctx.font = HUD.labelFont;
+    ctx.fillStyle = HUD.labelColor;
+    ctx.fillText(label, x, HUD.labelY);
+
+    ctx.font = HUD.valueFont;
+    ctx.fillStyle = valueColor;
+    ctx.fillText(String(value), x, HUD.valueY);
+  }
+
   function drawHud() {
-    ctx.font = '600 18px system-ui, sans-serif';
     ctx.textBaseline = 'top';
 
-    ctx.fillStyle = '#e8eaf2';
-    ctx.textAlign = 'left';
-    ctx.fillText('점수 ' + state.score, 20, 18);
+    drawHudColumn('점수', state.score, 24, 'left', '#e8eaf2');
+    drawHudColumn('HI-SCORE', state.hiScore, W - 24, 'right', '#8b93ab');
 
-    ctx.fillStyle = '#8b93ab';
-    ctx.textAlign = 'right';
-    ctx.fillText('HI ' + state.hiScore, W - 20, 18);
-
+    ctx.font = '600 15px system-ui, sans-serif';
+    ctx.fillStyle = HUD.labelColor;
     ctx.textAlign = 'center';
-    ctx.fillText('공 ' + balls.length + ' / ' + BALL.maxCount, W / 2, 18);
+    ctx.fillText('공 ' + balls.length + ' / ' + BALL.maxCount, W / 2, 20);
   }
 
   function drawBar() {
@@ -319,7 +354,7 @@
   requestAnimationFrame(loop);
 
   // 디버그용: 브라우저 콘솔에서 __game.balls 등으로 상태 확인
-  window.__game = { BAR, BALL, bar, balls, state, spawnBall, update, restart };
+  window.__game = { BAR, BALL, bar, balls, state, spawnBall, update, restart, currentSpeed };
 })();
 </script>
 </body>
