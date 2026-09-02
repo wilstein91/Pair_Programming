@@ -35,7 +35,7 @@
   <div id="stage">
     <canvas id="game" width="800" height="600"></canvas>
   </div>
-  <p class="hint">← → 또는 A / D 키로 바를 움직이세요</p>
+  <p class="hint">화면을 클릭해 공을 소환하고, ← → 또는 A / D 키로 바를 움직이세요 (공 최대 5개)</p>
 
 <script>
 (() => {
@@ -54,26 +54,76 @@
     y: H - 48,
   };
 
+  const BALL = {
+    radius: 9,
+    speed: 340,          // px/s (등속)
+    maxCount: 5,
+    maxBounceAngle: Math.PI / 3,   // 바 끝에 맞았을 때 튕기는 각도(60°)
+  };
+
   // ── 상태 ────────────────────────────────────────────────
   const bar = { x: W / 2 - BAR.width / 2 };
+  const balls = [];
   const keys = new Set();
 
   // ── 입력 ────────────────────────────────────────────────
   const MOVE_KEYS = ['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D'];
+  const normalize = (key) => (key.length === 1 ? key.toLowerCase() : key);
 
   window.addEventListener('keydown', (e) => {
     if (MOVE_KEYS.includes(e.key)) {
-      keys.add(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+      keys.add(normalize(e.key));
       e.preventDefault();
     }
   });
 
   window.addEventListener('keyup', (e) => {
-    keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+    keys.delete(normalize(e.key));
   });
 
   function movingLeft()  { return keys.has('ArrowLeft')  || keys.has('a'); }
   function movingRight() { return keys.has('ArrowRight') || keys.has('d'); }
+
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (W / rect.width);
+    const y = (e.clientY - rect.top) * (H / rect.height);
+    spawnBall(x, y);
+  });
+
+  // ── 공 ──────────────────────────────────────────────────
+  function spawnBall(x, y) {
+    if (balls.length >= BALL.maxCount) return;
+
+    // 바 아래에서 소환되면 즉시 놓친 것이 되므로 위쪽으로 올려준다
+    const spawnY = Math.min(y, BAR.y - BALL.radius * 3);
+    const angle = (Math.random() * 0.6 + 0.2) * Math.PI;  // 아래 방향 대각선
+    balls.push({
+      x: Math.max(BALL.radius, Math.min(W - BALL.radius, x)),
+      y: Math.max(BALL.radius, spawnY),
+      vx: Math.cos(angle) * BALL.speed,
+      vy: Math.abs(Math.sin(angle)) * BALL.speed,
+    });
+  }
+
+  function bounceOffBar(ball) {
+    // 바 중앙에서 얼마나 떨어진 곳에 맞았는지 (-1 왼쪽 끝 ~ +1 오른쪽 끝)
+    const offset = (ball.x - (bar.x + BAR.width / 2)) / (BAR.width / 2);
+    const angle = Math.max(-1, Math.min(1, offset)) * BALL.maxBounceAngle;
+
+    ball.vx = Math.sin(angle) * BALL.speed;
+    ball.vy = -Math.cos(angle) * BALL.speed;
+    ball.y = BAR.y - BALL.radius;
+  }
+
+  function hitsBar(ball, prevY) {
+    if (ball.vy <= 0) return false;
+
+    const crossed = prevY + BALL.radius <= BAR.y && ball.y + BALL.radius >= BAR.y;
+    if (!crossed) return false;
+
+    return ball.x + BALL.radius >= bar.x && ball.x - BALL.radius <= bar.x + BAR.width;
+  }
 
   // ── 업데이트 ────────────────────────────────────────────
   function update(dt) {
@@ -83,6 +133,30 @@
 
     bar.x += dir * BAR.speed * dt;
     bar.x = Math.max(0, Math.min(W - BAR.width, bar.x));
+
+    for (const ball of balls) {
+      const prevY = ball.y;
+
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+
+      // 좌우 벽 반사
+      if (ball.x - BALL.radius <= 0) {
+        ball.x = BALL.radius;
+        ball.vx = Math.abs(ball.vx);
+      } else if (ball.x + BALL.radius >= W) {
+        ball.x = W - BALL.radius;
+        ball.vx = -Math.abs(ball.vx);
+      }
+
+      // 천장 반사
+      if (ball.y - BALL.radius <= 0) {
+        ball.y = BALL.radius;
+        ball.vy = Math.abs(ball.vy);
+      }
+
+      if (hitsBar(ball, prevY)) bounceOffBar(ball);
+    }
   }
 
   // ── 그리기 ──────────────────────────────────────────────
@@ -93,9 +167,19 @@
     ctx.fill();
   }
 
+  function drawBalls() {
+    ctx.fillStyle = '#ffd166';
+    for (const ball of balls) {
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, BALL.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   function render() {
     ctx.clearRect(0, 0, W, H);
     drawBar();
+    drawBalls();
   }
 
   // ── 게임 루프 ───────────────────────────────────────────
@@ -111,6 +195,9 @@
   }
 
   requestAnimationFrame(loop);
+
+  // 디버그용: 브라우저 콘솔에서 __game.balls 등으로 상태 확인
+  window.__game = { BAR, BALL, bar, balls, spawnBall, update };
 })();
 </script>
 </body>
