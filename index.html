@@ -28,12 +28,49 @@
     cursor: crosshair;
   }
   .hint { margin: 0; font-size: 13px; color: #8b93ab; }
+
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 10px;
+    background: rgba(12, 14, 20, 0.82);
+  }
+  #overlay[hidden] { display: none; }
+  #overlay h2 { margin: 0 0 4px; font-size: 34px; letter-spacing: 0.04em; color: #ff6b6b; }
+  #overlay p { margin: 0; font-size: 16px; color: #b9c0d4; }
+  #overlay strong { color: #e8eaf2; font-size: 20px; }
+  #newRecord { color: #ffd166; font-weight: 600; }
+  #newRecord[hidden] { display: none; }
+  #restart {
+    margin-top: 14px;
+    padding: 11px 30px;
+    font: inherit;
+    font-weight: 600;
+    color: #12141c;
+    background: #5b8cff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  #restart:hover { background: #7ba3ff; }
 </style>
 </head>
 <body>
   <h1>공튀기기</h1>
   <div id="stage">
     <canvas id="game" width="800" height="600"></canvas>
+    <div id="overlay" hidden>
+      <h2>게임 오버</h2>
+      <p>점수 <strong id="finalScore">0</strong></p>
+      <p>최고 점수 <span id="finalHi">0</span></p>
+      <p id="newRecord" hidden>새 기록!</p>
+      <button id="restart">다시하기</button>
+    </div>
   </div>
   <p class="hint">화면을 클릭해 공을 소환하고, ← → 또는 A / D 키로 바를 움직이세요 (공 최대 5개)</p>
 
@@ -43,6 +80,12 @@
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const finalScoreEl = document.getElementById('finalScore');
+  const finalHiEl = document.getElementById('finalHi');
+  const newRecordEl = document.getElementById('newRecord');
+  const restartBtn = document.getElementById('restart');
+
   const W = canvas.width;
   const H = canvas.height;
 
@@ -61,10 +104,35 @@
     maxBounceAngle: Math.PI / 3,   // 바 끝에 맞았을 때 튕기는 각도(60°)
   };
 
+  const HI_SCORE_KEY = 'ballBounce.hiScore';
+
   // ── 상태 ────────────────────────────────────────────────
   const bar = { x: W / 2 - BAR.width / 2 };
   const balls = [];
   const keys = new Set();
+
+  const state = {
+    playing: true,
+    score: 0,
+    hiScore: loadHiScore(),
+  };
+
+  // ── Hi-Score 저장 ───────────────────────────────────────
+  function loadHiScore() {
+    try {
+      return Number(localStorage.getItem(HI_SCORE_KEY)) || 0;
+    } catch {
+      return 0;   // 시크릿 모드 등에서 접근이 막힌 경우
+    }
+  }
+
+  function saveHiScore(value) {
+    try {
+      localStorage.setItem(HI_SCORE_KEY, String(value));
+    } catch {
+      /* 저장 실패해도 게임은 계속된다 */
+    }
+  }
 
   // ── 입력 ────────────────────────────────────────────────
   const MOVE_KEYS = ['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D'];
@@ -85,11 +153,15 @@
   function movingRight() { return keys.has('ArrowRight') || keys.has('d'); }
 
   canvas.addEventListener('click', (e) => {
+    if (!state.playing) return;
+
     const rect = canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (W / rect.width);
     const y = (e.clientY - rect.top) * (H / rect.height);
     spawnBall(x, y);
   });
+
+  restartBtn.addEventListener('click', restart);
 
   // ── 공 ──────────────────────────────────────────────────
   function spawnBall(x, y) {
@@ -114,6 +186,8 @@
     ball.vx = Math.sin(angle) * BALL.speed;
     ball.vy = -Math.cos(angle) * BALL.speed;
     ball.y = BAR.y - BALL.radius;
+
+    state.score += 1;
   }
 
   function hitsBar(ball, prevY) {
@@ -125,8 +199,33 @@
     return ball.x + BALL.radius >= bar.x && ball.x - BALL.radius <= bar.x + BAR.width;
   }
 
-  // ── 업데이트 ────────────────────────────────────────────
+  // ── 게임 진행 ───────────────────────────────────────────
+  function gameOver() {
+    state.playing = false;
+
+    const isNewRecord = state.score > state.hiScore;
+    if (isNewRecord) {
+      state.hiScore = state.score;
+      saveHiScore(state.hiScore);
+    }
+
+    finalScoreEl.textContent = state.score;
+    finalHiEl.textContent = state.hiScore;
+    newRecordEl.hidden = !isNewRecord;
+    overlay.hidden = false;
+  }
+
+  function restart() {
+    balls.length = 0;
+    bar.x = W / 2 - BAR.width / 2;
+    state.score = 0;
+    state.playing = true;
+    overlay.hidden = true;
+  }
+
   function update(dt) {
+    if (!state.playing) return;
+
     let dir = 0;
     if (movingLeft())  dir -= 1;
     if (movingRight()) dir += 1;
@@ -156,10 +255,32 @@
       }
 
       if (hitsBar(ball, prevY)) bounceOffBar(ball);
+
+      // 하단을 지나치면 게임 오버 (공 하나라도 놓치면 끝)
+      if (ball.y - BALL.radius > H) {
+        gameOver();
+        return;
+      }
     }
   }
 
   // ── 그리기 ──────────────────────────────────────────────
+  function drawHud() {
+    ctx.font = '600 18px system-ui, sans-serif';
+    ctx.textBaseline = 'top';
+
+    ctx.fillStyle = '#e8eaf2';
+    ctx.textAlign = 'left';
+    ctx.fillText('점수 ' + state.score, 20, 18);
+
+    ctx.fillStyle = '#8b93ab';
+    ctx.textAlign = 'right';
+    ctx.fillText('HI ' + state.hiScore, W - 20, 18);
+
+    ctx.textAlign = 'center';
+    ctx.fillText('공 ' + balls.length + ' / ' + BALL.maxCount, W / 2, 18);
+  }
+
   function drawBar() {
     ctx.fillStyle = '#5b8cff';
     ctx.beginPath();
@@ -178,6 +299,7 @@
 
   function render() {
     ctx.clearRect(0, 0, W, H);
+    drawHud();
     drawBar();
     drawBalls();
   }
@@ -197,7 +319,7 @@
   requestAnimationFrame(loop);
 
   // 디버그용: 브라우저 콘솔에서 __game.balls 등으로 상태 확인
-  window.__game = { BAR, BALL, bar, balls, spawnBall, update };
+  window.__game = { BAR, BALL, bar, balls, state, spawnBall, update, restart };
 })();
 </script>
 </body>
