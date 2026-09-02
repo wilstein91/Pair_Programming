@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공튀기기</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: #12141c;
+    color: #e8eaf2;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.02em; }
+  #stage { position: relative; }
+  canvas {
+    display: block;
+    background: #1b1e2b;
+    border-radius: 10px;
+    border: 1px solid #2c3145;
+    cursor: crosshair;
+  }
+  .hint { margin: 0; font-size: 13px; color: #8b93ab; }
+</style>
+</head>
+<body>
+  <h1>공튀기기</h1>
+  <div id="stage">
+    <canvas id="game" width="800" height="600"></canvas>
+  </div>
+  <p class="hint">← → 또는 A / D 키로 바를 움직이세요</p>
+
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // ── 설정값 ──────────────────────────────────────────────
+  const BAR = {
+    width: 120,
+    height: 14,
+    speed: 520,          // px/s
+    y: H - 48,
+  };
+
+  // ── 상태 ────────────────────────────────────────────────
+  const bar = { x: W / 2 - BAR.width / 2 };
+  const keys = new Set();
+
+  // ── 입력 ────────────────────────────────────────────────
+  const MOVE_KEYS = ['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D'];
+
+  window.addEventListener('keydown', (e) => {
+    if (MOVE_KEYS.includes(e.key)) {
+      keys.add(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+      e.preventDefault();
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+  });
+
+  function movingLeft()  { return keys.has('ArrowLeft')  || keys.has('a'); }
+  function movingRight() { return keys.has('ArrowRight') || keys.has('d'); }
+
+  // ── 업데이트 ────────────────────────────────────────────
+  function update(dt) {
+    let dir = 0;
+    if (movingLeft())  dir -= 1;
+    if (movingRight()) dir += 1;
+
+    bar.x += dir * BAR.speed * dt;
+    bar.x = Math.max(0, Math.min(W - BAR.width, bar.x));
+  }
+
+  // ── 그리기 ──────────────────────────────────────────────
+  function drawBar() {
+    ctx.fillStyle = '#5b8cff';
+    ctx.beginPath();
+    ctx.roundRect(bar.x, BAR.y, BAR.width, BAR.height, 7);
+    ctx.fill();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    drawBar();
+  }
+
+  // ── 게임 루프 ───────────────────────────────────────────
+  let last = performance.now();
+
+  function loop(now) {
+    const dt = Math.min((now - last) / 1000, 0.05); // 탭 전환 시 튀는 것 방지
+    last = now;
+
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
